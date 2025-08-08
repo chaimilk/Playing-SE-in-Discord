@@ -1,9 +1,0 @@
-コマプロ側
-cd C:\Users\popch\OneDrive\ドキュメント\discordbot
-
-npm run compile
-
-node ./build/main.js
-
-discord側
-
