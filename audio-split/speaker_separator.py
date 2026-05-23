@@ -54,12 +54,23 @@ def compute_embeddings(segments: list[dict], encoder: VoiceEncoder) -> np.ndarra
     for i, seg in enumerate(segments):
         processed = preprocess_wav(seg["audio"], source_sr=16000)
         if len(processed) < 160:
-            embedding = np.zeros(256)
+            embedding = None
         else:
             embedding = encoder.embed_utterance(processed)
+            if np.linalg.norm(embedding) < 1e-8:
+                embedding = None
         embeddings.append(embedding)
         if (i + 1) % 50 == 0:
             print(f"  {i + 1}/{len(segments)} 完了")
+
+    valid_embeddings = [e for e in embeddings if e is not None]
+    if not valid_embeddings:
+        raise RuntimeError("有効な話者埋め込みが見つかりませんでした")
+    mean_embedding = np.mean(valid_embeddings, axis=0)
+    for i in range(len(embeddings)):
+        if embeddings[i] is None:
+            embeddings[i] = mean_embedding + np.random.normal(0, 1e-4, mean_embedding.shape)
+
     print(f"  全 {len(segments)} セグメントの埋め込み計算完了")
     return np.array(embeddings)
 
@@ -67,8 +78,12 @@ def compute_embeddings(segments: list[dict], encoder: VoiceEncoder) -> np.ndarra
 def cluster_speakers(embeddings: np.ndarray, num_speakers: int) -> np.ndarray:
     """話者埋め込みをクラスタリングして話者ラベルを割り当てる。"""
     print(f"話者クラスタリング中 (話者数: {num_speakers})...")
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms = np.maximum(norms, 1e-8)
+    normalized = embeddings / norms
+
     clusterer = SpectralClusterer(min_clusters=num_speakers, max_clusters=num_speakers)
-    labels = clusterer.predict(embeddings)
+    labels = clusterer.predict(normalized)
     unique, counts = np.unique(labels, return_counts=True)
     for label, count in zip(unique, counts):
         print(f"  話者 {label + 1}: {count} セグメント")
